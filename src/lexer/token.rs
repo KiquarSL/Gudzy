@@ -1,6 +1,6 @@
 pub type TKind = TokenKind;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Plus,  // +
     Minus, // -
