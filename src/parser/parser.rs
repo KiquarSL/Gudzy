@@ -1,3 +1,4 @@
+use super::ast::{AssignOp, Stmt, StmtKind};
 use super::expr::{ArithOp, BExpr, CompOp, Expr, LogicOp, UnaryOp};
 use crate::info;
 use crate::lexer::token::{TKind, Token};
@@ -19,6 +20,15 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn parse(&mut self) -> Vec<Stmt> {
+        let mut stmts = vec![];
+        while self.peek(0).kind != TKind::Eof {
+            let expr = self.stmt();
+            stmts.push(expr);
+        }
+        stmts
+    }
+
     pub fn parse_exprs(&mut self) -> Vec<Expr> {
         let mut exprs = vec![];
         while self.peek(0).kind != TKind::Eof {
@@ -28,7 +38,7 @@ impl<'a> Parser<'a> {
         exprs
     }
 
-    fn error(&self, msg: &str, token: Token) -> String {
+    pub fn error(&self, msg: &str, token: Token) -> String {
         let line = self.lines[token.line];
         let header = format!("Error in {}:{} - {msg}", token.line, token.offset);
         let err_line = format!("{} | {line}", token.line);
@@ -41,7 +51,7 @@ impl<'a> Parser<'a> {
         format!("{header}\n{err_line}\n{point}\n")
     }
 
-    fn peek(&self, offset: i8) -> Token {
+    pub fn peek(&self, offset: i8) -> Token {
         let idx = self.pos + offset as usize;
         self.tokens.get(idx).unwrap().clone()
     }
@@ -57,6 +67,28 @@ impl<'a> Parser<'a> {
         } else {
             false
         }
+    }
+
+    fn parse_args(&mut self) -> Vec<Expr> {
+        let mut args = Vec::new();
+        while self.peek(0).kind != TKind::Eof {
+            let value = self.expr();
+            args.push(value);
+            let current = self.peek(0);
+            if current.kind == TKind::RParen {
+                break;
+            }
+            if !self.check(TKind::Comma) {
+                panic!(
+                    "{}",
+                    self.error(
+                        &format!("Expected ')' or ',', found {:?}", current),
+                        current
+                    )
+                );
+            }
+        }
+        args
     }
 }
 
@@ -180,5 +212,55 @@ impl Parser<'_> {
             }
             _ => panic!("{}", self.error("Unexpected token in primary", current)),
         }
+    }
+}
+
+impl Parser<'_> {
+    fn stmt(&mut self) -> Stmt {
+        match Stmt::define(self) {
+            StmtKind::Assign => self.parse_assign(),
+            StmtKind::Print => self.parse_print(),
+        }
+    }
+
+    fn parse_assign(&mut self) -> Stmt {
+        let id = match self.peek(0).kind {
+            TKind::Id(id) => {
+                self.advance(1);
+                id
+            }
+            _ => unreachable!("{:?}", self.peek(0).kind),
+        };
+        let current = self.peek(0);
+        let assign = match current.kind {
+            TKind::Assign => AssignOp::default(),
+            _ => panic!(
+                "{}",
+                self.error(&format!("Expected '=', found {:?}", current), current)
+            ),
+        };
+        self.advance(1);
+        let value = self.expr();
+        Stmt::Assign(id, assign, value)
+    }
+
+    fn parse_print(&mut self) -> Stmt {
+        self.advance(1);
+        if !self.check(TKind::LParen) {
+            let current = self.peek(0);
+            panic!(
+                "{}",
+                self.error(&format!("Expected '(', found {:?}", current), current)
+            );
+        }
+        let args = self.parse_args();
+        if !self.check(TKind::RParen) {
+            let current = self.peek(0);
+            panic!(
+                "{}",
+                self.error(&format!("Expected ')', found {:?}", current), current)
+            );
+        }
+        Stmt::Print(args)
     }
 }
